@@ -59,9 +59,7 @@ enum Commands {
     User {
         user: String,
     },
-    Sync {
-        args: Vec<String>,
-    },
+    Sync,
 }
 
 #[derive(Debug, Subcommand)]
@@ -140,7 +138,7 @@ fn __main() -> Result<(), Error> {
                 }
             }
         }
-        Commands::Sync { args } => {
+        Commands::Sync => {
             let mut cmd = Command::new("git")
                 .args(["config", "--local", "user.name"])
                 .stdout(Stdio::piped())
