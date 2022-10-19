@@ -59,7 +59,9 @@ enum Commands {
     User {
         user: String,
     },
+    Info,
     Sync,
+    Logout,
 }
 
 #[derive(Debug, Subcommand)]
@@ -88,6 +90,69 @@ fn ensure_config() -> Result<PathBuf, Error> {
     Ok(path)
 }
 
+fn git_user() -> Result<String, Error> {
+    let mut cmd = Command::new("git")
+        .args(["config", "--local", "user.name"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .stdin(Stdio::inherit())
+        .spawn()?;
+    let cmd_stdout = cmd
+        .stdout
+        .as_mut()
+        .ok_or(Error::msg("could not get git stdin"))?;
+    let mut user = String::new();
+    cmd_stdout.read_to_string(&mut user)?;
+    user = user.trim().to_string();
+    if user.is_empty() {
+        let mut cmd = Command::new("git")
+            .args(["config", "user.name"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .stdin(Stdio::inherit())
+            .spawn()?;
+        let cmd_stdout = cmd
+            .stdout
+            .as_mut()
+            .ok_or(Error::msg("could not get git stdin"))?;
+        cmd_stdout.read_to_string(&mut user)?;
+    }
+    if user.is_empty() {
+        return Err(Error::msg("could not find git config username"));
+    }
+    Ok(user)
+}
+
+fn set_user(user: &String, path: &PathBuf) -> Result<(), Error> {
+    let config = Config::from_file(&path)?;
+    match config.users.get(user) {
+        Some(c_user) => {
+            let mut cmd = Command::new("gh")
+                .args(["auth", "login", "--with-token"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .spawn()?;
+            let cmd_stdin = cmd
+                .stdin
+                .as_mut()
+                .ok_or(Error::msg("could not get gh stdin"))?;
+            write!(cmd_stdin, "{}", c_user.token)?;
+            cmd.wait()?;
+            let mut config = Config::from_file(&path)?;
+            config.current_user = Some(user.clone());
+            Config::to_file(&config, &path)?;
+
+            Command::new("gh")
+                .args(["auth", "status"])
+                .stderr(Stdio::inherit())
+                .output()?;
+            Ok(())
+        }
+        None => Err(Error::msg(format!("no token found for user '{}'", user))),
+    }
+}
+
 fn __main() -> Result<(), Error> {
     let cli = Cli::parse();
     let path = ensure_config()?;
@@ -111,80 +176,46 @@ fn __main() -> Result<(), Error> {
             Config::to_file(&config, &path)?;
         }
         Commands::User { user } => {
-            let config = Config::from_file(&path)?;
-            match config.users.get(user) {
-                Some(c_user) => {
-                    let mut cmd = Command::new("gh")
-                        .args(["auth", "login", "--with-token"])
-                        .stdin(Stdio::piped())
-                        .stdout(Stdio::inherit())
-                        .stderr(Stdio::inherit())
-                        .spawn()?;
-                    let cmd_stdin = cmd
-                        .stdin
-                        .as_mut()
-                        .ok_or(Error::msg("could not get gh stdin"))?;
-                    write!(cmd_stdin, "{}", c_user.token)?;
-                    Command::new("gh")
-                        .args(["auth", "status"])
-                        .stderr(Stdio::inherit())
-                        .output()?;
-                    let mut config = Config::from_file(&path)?;
-                    config.current_user = Some(user.clone());
-                    Config::to_file(&config, &path)?;
-                }
-                None => {
-                    return Err(Error::msg(format!("no token found for user '{}'", user)));
-                }
-            }
+            set_user(user, &path)?;
         }
-        Commands::Sync => {
-            let mut cmd = Command::new("git")
-                .args(["config", "--local", "user.name"])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::inherit())
-                .stdin(Stdio::inherit())
-                .spawn()?;
-            let cmd_stdout = cmd
-                .stdout
-                .as_mut()
-                .ok_or(Error::msg("could not get git stdin"))?;
-            let mut user = String::new();
-            cmd_stdout.read_to_string(&mut user)?;
-            user = user.trim().to_string();
-            if user.is_empty() {
-                let mut cmd = Command::new("git")
-                    .args(["config", "user.name"])
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::inherit())
-                    .stdin(Stdio::inherit())
-                    .spawn()?;
-                let cmd_stdout = cmd
-                    .stdout
-                    .as_mut()
-                    .ok_or(Error::msg("could not get git stdin"))?;
-                cmd_stdout.read_to_string(&mut user)?;
-            }
-            if user.is_empty() {
-                return Err(Error::msg("could not find git config username"));
-            }
+        Commands::Info => {
+            let user = git_user()?;
             let config = Config::from_file(&path)?;
             match config.current_user {
                 Some(c_user) => {
                     if user != c_user {
-                        return Err(Error::msg(format!(
-                            "attempted to use git with user '{}', but authenticated with user '{}'",
-                            user, c_user
-                        )));
+                        println!("{} {}", "info:".bold(), "conflict".red().bold());
+                        println!(" * {} -> {}", "git".italic(), user);
+                        println!(" * {} -> {}", "gh ".italic(), c_user);
+                        return Ok(());
                     }
+                    println!("{} {}", "info:".bold(), "sync".green().bold());
+                    println!(" * {} -> {}", "git".italic(), user);
+                    println!(" * {} -> {}", "gh ".italic(), c_user);
+                    return Ok(());
                 }
                 None => {
-                    return Err(Error::msg(
-                        "no GitHub user authenticated, use 'user' command",
-                    ));
+                    println!("{} {}", "info:".bold(), "no-auth".yellow().bold());
+                    println!(" * {} -> {}", "git".italic(), user);
+                    println!(" * {} -> {}", "gh ".italic(), "none".dimmed());
+                    return Ok(());
                 }
             }
-            println!("{} {}", "current user:".bold(), user);
+        }
+        Commands::Sync => {
+            let user = git_user()?;
+            set_user(&user, &path)?;
+        }
+        Commands::Logout => {
+            Command::new("gh")
+                .args(["auth", "logout"])
+                .stdin(Stdio::inherit())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .output()?;
+            let mut config = Config::from_file(&path)?;
+            config.current_user = None;
+            Config::to_file(&config, &path)?;
         }
     }
     Ok(())
