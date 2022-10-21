@@ -1,6 +1,5 @@
 use anyhow::Error;
 use colored::Colorize;
-use home::home_dir;
 use std::{
     collections::HashMap,
     fs::{create_dir_all, File},
