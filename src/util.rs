@@ -98,3 +98,18 @@ pub fn set_user(user: &String, path: &PathBuf, sync: bool) -> Result<(), Error> 
         None => Err(Error::msg(format!("no token found for user '{}'", user))),
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_ensure_config() -> Result<(), Error> {
+        let base_path = Path::new(".test").to_path_buf();
+        let config_path = ".goat-test.toml";
+        ensure_config(base_path.clone(), config_path)?;
+        assert!(base_path.join(config_path).exists());
+        Ok(())
+    }
+}
