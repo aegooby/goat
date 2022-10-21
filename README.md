@@ -1,4 +1,5 @@
 # goat
+![](https://github.com/aegooby/goat/actions/workflows/cargo.yml/badge.svg?event=push)
 ## Commands
 ### `token`
 #### `set <user> <token>`
