@@ -1,24 +1,26 @@
+use std::process::exit;
+
 use anyhow::Error;
 use cli::cli;
 use colored::Colorize;
 use home::home_dir;
 
-use std::process::exit;
-
 mod cli;
 mod config;
+mod github;
 mod util;
 
 const CONFIG_PATH: &'static str = ".goat.toml";
 
-fn __main() -> Result<(), Error> {
+async fn __main() -> Result<(), Error> {
     let home_path = home_dir().ok_or(Error::msg("failed to find home directory"))?;
-    cli(home_path, CONFIG_PATH)?;
+    cli(home_path, CONFIG_PATH).await?;
     Ok(())
 }
 
-fn main() {
-    if let Err(error) = __main() {
+#[tokio::main(flavor = "multi_thread")]
+pub async fn main() {
+    if let Err(error) = __main().await {
         println!("{} {}", "error:".red().bold(), error);
         exit(1);
     }

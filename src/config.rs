@@ -1,12 +1,11 @@
-use std::{
-    collections::HashMap,
-    fs::{File, OpenOptions},
-    io::{Read, Write},
-    path::PathBuf,
-};
+use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Error;
 use serde::{Deserialize, Serialize};
+use tokio::{
+    fs::{File, OpenOptions},
+    io::{AsyncReadExt, AsyncWriteExt},
+};
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
@@ -15,20 +14,21 @@ pub struct Config {
     pub users: HashMap<String, ConfigUser>,
 }
 impl Config {
-    pub fn from_file(path: &PathBuf) -> Result<Self, Error> {
+    pub async fn from_file(path: &PathBuf) -> Result<Self, Error> {
         let mut config_str = String::new();
-        let mut file = File::open(path.clone())?;
-        file.read_to_string(&mut config_str)?;
+        let mut file = File::open(path.clone()).await?;
+        file.read_to_string(&mut config_str).await?;
         let config: Config = toml::from_str(&config_str)?;
         Ok(config)
     }
-    pub fn to_file(config: &Config, path: &PathBuf) -> Result<(), Error> {
+    pub async fn to_file(config: &Config, path: &PathBuf) -> Result<(), Error> {
         let config_str = toml::to_string(&config)?;
         let mut file = OpenOptions::new()
             .write(true)
             .truncate(true)
-            .open(path.clone())?;
-        write!(file, "{}", config_str)?;
+            .open(path.clone())
+            .await?;
+        file.write(config_str.as_bytes()).await?;
         Ok(())
     }
 }

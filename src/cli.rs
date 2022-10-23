@@ -1,14 +1,13 @@
-use std::{
-    path::PathBuf,
-    process::{Command, Stdio},
-};
+use std::path::PathBuf;
 
 use anyhow::Error;
 use clap::{Parser, Subcommand};
 use colored::Colorize;
+use tokio::process::Command;
 
 use crate::{
     config::{Config, ConfigUser},
+    github::latest_release_download,
     util::{ensure_config, git_user, set_user},
 };
 
@@ -35,6 +34,7 @@ enum Commands {
     },
     Info,
     Sync,
+    Update,
 }
 
 #[derive(Debug, Subcommand)]
@@ -43,12 +43,12 @@ enum TokenCommands {
     Del { user: String },
 }
 
-pub fn cli(base_path: PathBuf, config_path: &'static str) -> Result<(), Error> {
+pub async fn cli(base_path: PathBuf, config_path: &'static str) -> Result<(), Error> {
     let cli = Cli::parse();
-    let path = ensure_config(base_path, config_path)?;
+    let path = ensure_config(base_path, config_path).await?;
     match &cli.command {
         Commands::Token { command } => {
-            let mut config = Config::from_file(&path)?;
+            let mut config = Config::from_file(&path).await?;
             match command {
                 TokenCommands::Set { user, key } => {
                     config.users.insert(
@@ -65,28 +65,23 @@ pub fn cli(base_path: PathBuf, config_path: &'static str) -> Result<(), Error> {
                     println!("{} deleted user {}", "token(del):", user);
                 }
             }
-            Config::to_file(&config, &path)?;
+            Config::to_file(&config, &path).await?;
         }
         Commands::Login { user } => {
-            set_user(user, &path, false)?;
+            set_user(user, &path, false).await?;
         }
         Commands::Logout => {
-            let output = Command::new("gh")
-                .args(["auth", "logout"])
-                .stdin(Stdio::inherit())
-                .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .output()?;
+            let output = Command::new("gh").args(["auth", "logout"]).output().await?;
             if !output.status.success() {
                 return Err(Error::msg("failed to logout with gh"));
             }
-            let mut config = Config::from_file(&path)?;
+            let mut config = Config::from_file(&path).await?;
             config.current_user = None;
-            Config::to_file(&config, &path)?;
+            Config::to_file(&config, &path).await?;
             println!("{} cleared credentials", "logout:".bold());
         }
         Commands::List { show } => {
-            let config = Config::from_file(&path)?;
+            let config = Config::from_file(&path).await?;
             println!("{}", "list:".bold());
             for (username, user) in config.users.iter() {
                 let token = if *show {
@@ -104,8 +99,8 @@ pub fn cli(base_path: PathBuf, config_path: &'static str) -> Result<(), Error> {
             }
         }
         Commands::Info => {
-            let user = git_user()?;
-            let config = Config::from_file(&path)?;
+            let user = git_user().await?;
+            let config = Config::from_file(&path).await?;
             match config.current_user {
                 Some(c_user) => {
                     if user != c_user {
@@ -128,8 +123,11 @@ pub fn cli(base_path: PathBuf, config_path: &'static str) -> Result<(), Error> {
             }
         }
         Commands::Sync => {
-            let user = git_user()?;
-            set_user(&user, &path, true)?;
+            let user = git_user().await?;
+            set_user(&user, &path, true).await?;
+        }
+        Commands::Update => {
+            println!("{} v{}", "update:".bold(), latest_release_download().await?);
         }
     }
     Ok(())

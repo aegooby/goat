@@ -18,7 +18,14 @@ edition = "2021"
 anyhow = "1.0.65"
 clap = { version = "4.0.17", features = ["derive"] }
 colored = "2.0.0"
+futures-util = { version = "0.3.25", features = ["tokio-io"] }
 home = "0.5.4"
+hyper = { version = "0.14.20", features = ["client", "stream", "http1", "http2", "runtime"] }
+hyper-rustls = { version = "0.23.0", features = ["http2"] }
+octocrab = "0.17.0"
+reqwest = { version = "0.11.12", features = ["rustls-tls", "serde_json", "stream"] }
 serde = { version = "1.0.145", features = ["serde_derive", "derive"] }
 serde_derive = "1.0.145"
+serde_json = "1.0.87"
+tokio = { version = "1.21.2", features = ["rt-multi-thread", "tracing", "tokio-macros", "macros", "process", "mio", "memchr", "parking_lot", "sync", "test-util", "fs"] }
 toml = "0.5.9"

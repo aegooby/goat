@@ -1,60 +1,59 @@
+use std::{collections::HashMap, path::PathBuf, process::Stdio};
+
 use anyhow::Error;
 use colored::Colorize;
-use std::{
-    collections::HashMap,
+use tokio::{
     fs::{create_dir_all, File},
-    io::{Read, Write},
-    path::PathBuf,
-    process::{Command, Stdio},
+    io::{AsyncReadExt, AsyncWriteExt},
+    process::Command,
 };
 
 use crate::config::Config;
 
-pub fn ensure_config(base_path: PathBuf, config_path: &'static str) -> Result<PathBuf, Error> {
+pub async fn ensure_config(
+    base_path: PathBuf,
+    config_path: &'static str,
+) -> Result<PathBuf, Error> {
     let path = base_path.join(config_path);
     if !path.exists() {
         if let Some(parent) = path.parent() {
-            create_dir_all(parent)?;
-            let mut file = File::create(path.clone())?;
-            write!(
-                file,
-                "{}",
+            create_dir_all(parent).await?;
+            let mut file = File::create(path.clone()).await?;
+            file.write(
                 toml::to_string(&Config {
                     users: HashMap::new(),
-                    current_user: None
+                    current_user: None,
                 })?
-            )?;
+                .as_bytes(),
+            )
+            .await?;
         }
     }
     Ok(path)
 }
 
-pub fn git_user() -> Result<String, Error> {
+pub async fn git_user() -> Result<String, Error> {
     let mut cmd = Command::new("git")
         .args(["config", "--local", "user.name"])
         .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .stdin(Stdio::inherit())
         .spawn()?;
     let cmd_stdout = cmd
         .stdout
         .as_mut()
         .ok_or(Error::msg("could not get git stdin"))?;
     let mut user = String::new();
-    cmd_stdout.read_to_string(&mut user)?;
+    cmd_stdout.read_to_string(&mut user).await?;
     user = user.trim().to_string();
     if user.is_empty() {
         let mut cmd = Command::new("git")
             .args(["config", "user.name"])
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .stdin(Stdio::inherit())
             .spawn()?;
         let cmd_stdout = cmd
             .stdout
             .as_mut()
             .ok_or(Error::msg("could not get git stdin"))?;
-        cmd_stdout.read_to_string(&mut user)?;
+        cmd_stdout.read_to_string(&mut user).await?;
     }
     if user.is_empty() {
         return Err(Error::msg("could not find git config username"));
@@ -62,8 +61,8 @@ pub fn git_user() -> Result<String, Error> {
     Ok(user)
 }
 
-pub fn set_user(user: &String, path: &PathBuf, sync: bool) -> Result<(), Error> {
-    let config = Config::from_file(&path)?;
+pub async fn set_user(user: &String, path: &PathBuf, sync: bool) -> Result<(), Error> {
+    let config = Config::from_file(&path).await?;
     let op = if sync { "sync:" } else { "login:" }.bold();
     if let Some(cc_user) = config.current_user {
         if cc_user == *user {
@@ -83,14 +82,14 @@ pub fn set_user(user: &String, path: &PathBuf, sync: bool) -> Result<(), Error> 
                 .stdin
                 .as_mut()
                 .ok_or(Error::msg("could not get gh stdin"))?;
-            write!(cmd_stdin, "{}", c_user.token)?;
-            let output = cmd.wait_with_output()?;
+            cmd_stdin.write(c_user.token.as_bytes()).await?;
+            let output = cmd.wait_with_output().await?;
             if !output.status.success() {
                 return Err(Error::msg("failed to authenticate with gh"));
             }
-            let mut config = Config::from_file(&path)?;
+            let mut config = Config::from_file(&path).await?;
             config.current_user = Some(user.clone());
-            Config::to_file(&config, &path)?;
+            Config::to_file(&config, &path).await?;
 
             println!("{} logged in as {}", op, user);
             Ok(())
@@ -104,11 +103,11 @@ mod test {
     use super::*;
     use std::path::Path;
 
-    #[test]
-    fn test_ensure_config() -> Result<(), Error> {
+    #[tokio::test]
+    async fn test_ensure_config() -> Result<(), Error> {
         let base_path = Path::new(".test").to_path_buf();
         let config_path = ".goat-test.toml";
-        ensure_config(base_path.clone(), config_path)?;
+        ensure_config(base_path.clone(), config_path).await?;
         assert!(base_path.join(config_path).exists());
         Ok(())
     }
