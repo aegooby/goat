@@ -23,6 +23,7 @@ home = "0.5.4"
 hyper = { version = "0.14.20", features = ["client", "stream", "http1", "http2", "runtime"] }
 hyper-rustls = { version = "0.23.0", features = ["http2"] }
 octocrab = "0.17.0"
+openssl = { version = "0.10.42", features = ["vendored"] }
 reqwest = { version = "0.11.12", features = ["rustls-tls", "serde_json", "stream"] }
 serde = { version = "1.0.145", features = ["serde_derive", "derive"] }
 serde_derive = "1.0.145"
