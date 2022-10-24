@@ -35,6 +35,11 @@ enum Commands {
     Info,
     Sync,
     Update,
+    Init {
+        user: String,
+        #[arg(long)]
+        email: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -128,6 +133,22 @@ pub async fn cli(base_path: PathBuf, config_path: &'static str) -> Result<(), Er
         }
         Commands::Update => {
             println!("{} v{}", "update:".bold(), latest_release_download().await?);
+        }
+        Commands::Init { user, email } => {
+            let user_output = Command::new("git")
+                .args(["config", "--local", "user.name", user.as_str()])
+                .output()
+                .await?;
+            if !user_output.status.success() {
+                return Err(Error::msg("failed to set local git config"));
+            }
+            let email_output = Command::new("git")
+                .args(["config", "--local", "user.email", email.as_str()])
+                .output()
+                .await?;
+            if !email_output.status.success() {
+                return Err(Error::msg("failed to set local git config"));
+            }
         }
     }
     Ok(())
